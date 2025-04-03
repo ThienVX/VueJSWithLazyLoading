@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue 3 Product List with Lazy Loading</title>
+  <!-- Import Font Awesome for icons like spinner and arrow up -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    /* ==================== CSS Variables for Theming ==================== */
+    :root {
+      --primary-color: #4CAF50;   /* Green - used for primary actions/elements */
+      --secondary-color: #2196F3; /* Blue - used for secondary elements like tags */
+      --dark-color: #333;         /* Dark gray - used for text and backgrounds */
+      --light-color: #f4f4f4;     /* Light gray - used for backgrounds */
+      --danger-color: #dc3545;    /* Red - used for errors and "out of stock" */
+      --success-color: #28a745;   /* Green - used for success states like "in stock" */
+    }
+    
+    /* ==================== Intersection Observer Target Element ==================== */
+    /* This invisible element is watched by the IntersectionObserver to trigger loading */
+    .loading-trigger {
+      height: 20px;
+      margin: 2rem 0;
+    }
+    
+    /* ==================== Base Styling ==================== */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Arial', sans-serif;
+      line-height: 1.6;
+      background-color: #f8f9fa;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+    
+    /* ==================== Header Styling ==================== */
+    header {
+      background-color: var(--primary-color);
+      color: white;
+      text-align: center;
+      padding: 1rem;
+      margin-bottom: 2rem;
+      border-radius: 5px;
+    }
+    
+    /* ==================== Product Grid Layout ==================== */
+    /* Responsive grid that adjusts columns based on screen width */
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    /* ==================== Product Card Styling ==================== */
+    .product-card {
+      background-color: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+    }
+    
+    /* Hover effect for cards - slightly raises them */
+    .product-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .product-card-header {
+      background-color: var(--dark-color);
+      color: white;
+      padding: 0.75rem;
+      font-weight: bold;
+    }
+    
+    .product-card-body {
+      padding: 1rem;
+    }
+    
+    .product-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background-color: #f8f9fa;
+    }
+    
+    /* Price styling */
+    .price {
+      font-size: 1.25rem;
+      font-weight: bold;
+      color: var(--primary-color);
+    }
+    
+    /* Stock status indicator styling */
+    .stock-status {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    
+    .in-stock {
+      background-color: var(--success-color);
+      color: white;
+    }
+    
+    .out-of-stock {
+      background-color: var(--danger-color);
+      color: white;
+    }
+    
+    /* Category tag styling */
+    .category-tag {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      background-color: var(--secondary-color);
+      color: white;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    /* ==================== Loading and Status Indicators ==================== */
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      font-size: 1.5rem;
+      color: var(--dark-color);
+    }
+    
+    .error {
+      background-color: var(--danger-color);
+      color: white;
+      padding: 1rem;
+      border-radius: 5px;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    
+    .end-message {
+      text-align: center;
+      padding: 1rem;
+      font-style: italic;
+      color: #666;
+    }
+    
+    /* ==================== Scroll to Top Button ==================== */
+    .scroll-to-top {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background-color: var(--primary-color);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0; /* Hidden by default */
+      transition: opacity 0.3s ease;
+      z-index: 1000;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+    
+    /* Only shown when the visible class is added via JavaScript */
+    .scroll-to-top.visible {
+      opacity: 1;
+    }
+    
+    /* ==================== Placeholder Card for Loading State ==================== */
+    .placeholder-card {
+      background-color: #f0f0f0;
+      border-radius: 8px;
+      height: 250px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* Animation for loading effect on placeholder cards */
+    .placeholder-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+      animation: loading 1.5s infinite;
+    }
+    
+    @keyframes loading {
+      0% {
+        transform: translateX(-100%);
+      }
+      100% {
+        transform: translateX(100%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Root Vue app container -->
+  <div id="app">
+    <header>
+      <h1>Product Catalog</h1>
+    </header>
+    
+    <div class="container">
+      <!-- Error message display (only shown if error is not null) -->
+      <div v-if="error" class="error">{{ error }}</div>
+      
+      <div class="product-grid">
+        <!-- Product cards - v-for loops through products array -->
+        <div class="product-card" v-for="product in products" :key="product.id">
+          <div class="product-card-header">
+            {{ product.name }}
+          </div>
+          <div class="product-card-body">
+            <span class="category-tag">{{ product.category }}</span>
+            <p>{{ product.description }}</p>
+          </div>
+          <div class="product-card-footer">
+            <span class="price">${{ product.price }}</span>
+            <!-- Dynamic class binding based on stock status -->
+            <span class="stock-status" :class="product.inStock ? 'in-stock' : 'out-of-stock'">
+              {{ product.inStock ? 'In Stock' : 'Out of Stock' }}
+            </span>
+          </div>
+        </div>
+        
+        <!-- Placeholder cards shown during loading -->
+        <!-- v-for="n in X" creates X number of elements -->
+        <div class="placeholder-card" v-for="n in (loading ? 10 : 0)" :key="'placeholder-'+n"></div>
+      </div>
+      
+      <!-- Intersection Observer target element -->
+      <!-- When this becomes visible, more products will load -->
+      <div ref="loadingTrigger" class="loading-trigger"></div>
+      
+      <!-- Loading indicator -->
+      <div v-if="loading" class="loading">
+        <i class="fas fa-spinner fa-spin"></i> Loading products...
+      </div>
+      
+      <!-- End of content message -->
+      <div v-if="allLoaded && products.length > 0" class="end-message">
+        No more products to load
+      </div>
+      
+      <!-- Scroll to top button (only visible when scrolled down) -->
+      <div class="scroll-to-top" :class="{ 'visible': showScrollTop }" @click="scrollToTop">
+        <i class="fas fa-arrow-up"></i>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Vue 3 from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.min.js"></script>
+  
+  <script>
+    // Extract necessary Vue features
+    // nextTick is important for DOM updates to complete before measuring or observing
+    const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
+    
+    const app = createApp({
+      setup() {
+        // ==================== State Management ====================
+        // ref() creates reactive variables that will update the UI when changed
+        const products = ref([]); // Array to hold product data
+        const loading = ref(true); // Loading state flag
+        const error = ref(null);   // Error message (null when no error)
+        const page = ref(1);       // Current page for pagination
+        const limit = ref(10);     // Number of items per page
+        const total = ref(0);      // Total number of products available
+        const totalPages = ref(0); // Total number of pages available
+        const allLoaded = ref(false); // Flag to indicate all products are loaded
+        const showScrollTop = ref(false); // Flag to show/hide scroll-to-top button
+        const loadingTrigger = ref(null); // Reference to the element watched by IntersectionObserver
+        
+        // API endpoint for product data
+        const apiUrl = 'http://localhost:3000/api/products';
+        
+        // Observer instance for infinite scroll
+        let observer = null;
+        
+        // ==================== IntersectionObserver Setup ====================
+        // Sets up the observer to watch for when the loading trigger element becomes visible
+        const setupObserver = () => {
+          console.log('Setting up observer', loadingTrigger.value);
+          
+          // Check if browser supports IntersectionObserver and if our target element exists
+          if ('IntersectionObserver' in window && loadingTrigger.value) {
+            // Create a new observer instance
+            observer = new IntersectionObserver((entries) => {
+              // entries is an array of observed elements
+              // We only have one element, so we check entries[0]
+              if (entries[0].isIntersecting && !loading.value && !allLoaded.value) {
+                // If the element is visible, not currently loading, and not all products loaded
+                console.log('Loading more products from observer');
+                loadMoreProducts(); // Load the next page of products
+              }
+            }, { 
+              rootMargin: '200px', // Start loading 200px before the element comes into view
+              threshold: 0.1       // Trigger when at least 10% of the element is visible
+            });
+            
+            // Start observing our target element
+            observer.observe(loadingTrigger.value);
+            console.log('Observer attached to element');
+          } else {
+            console.log('IntersectionObserver not available or loadingTrigger not ready');
+          }
+        };
+        
+        // ==================== API Data Fetching ====================
+        // Fetches products from the API with pagination
+        const fetchProducts = async (isInitial = false) => {
+          // Set loading state to true to show loading indicators
+          loading.value = true;
+          console.log(`Fetching products: page ${page.value}, limit ${limit.value}`);
+          
+          try {
+            // Fetch data from API with pagination parameters
+            const response = await fetch(`${apiUrl}?page=${page.value}&limit=${limit.value}`);
+            
+            // Check if the response is successful
+            if (!response.ok) {
+              throw new Error('Failed to fetch products');
+            }
+            
+            // Parse JSON response
+            const data = await response.json();
+            console.log('Received data:', data);
+            
+            // Update products array
+            if (isInitial) {
+              // For initial load, replace the products array
+              products.value = data.products;
+            } else {
+              // For subsequent loads, append to the products array
+              products.value = [...products.value, ...data.products];
+            }
+            
+            // Update pagination metadata
+            total.value = data.total;
+            totalPages.value = data.totalPages;
+            
+            console.log(`Loaded ${products.value.length} of ${total.value} products`);
+            
+            // Check if we've loaded all available products
+            if (products.value.length >= total.value) {
+              console.log('All products loaded');
+              allLoaded.value = true;
+              
+              // Clean up observer when all products are loaded
+              if (observer) {
+                observer.disconnect();
+                observer = null;
+                console.log('Observer disconnected');
+              }
+            }
+            
+          } catch (err) {
+            // Handle errors from the API
+            console.error('Error fetching products:', err);
+            error.value = 'Failed to load products. Please try again later.';
+          } finally {
+            // Always set loading to false when done, whether successful or not
+            loading.value = false;
+          }
+        };
+        
+        // ==================== Load More Products Handler ====================
+        // Loads the next page of products
+        const loadMoreProducts = () => {
+          // Prevent loading if already loading or all products are loaded
+          if (loading.value || allLoaded.value) return;
+          
+          // Increment page number for pagination
+          page.value++;
+          console.log(`Loading more products: page ${page.value}`);
+          fetchProducts(); // Fetch the next page
+        };
+        
+        // ==================== Scroll Event Handler ====================
+        // Shows/hides the scroll-to-top button based on scroll position
+        const handleScroll = () => {
+          // Show button when scrolled down more than 500px
+          showScrollTop.value = window.scrollY > 500;
+        };
+        
+        // ==================== Scroll To Top Function ====================
+        // Smoothly scrolls back to the top of the page
+        const scrollToTop = () => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+        
+        // ==================== Lifecycle Hooks ====================
+        // Called when the component is mounted to the DOM
+        onMounted(async () => {
+          console.log('Component mounted');
+          // Initial data fetch
+          await fetchProducts(true);
+          
+          // Setup observer after the DOM has updated with initial products
+          // nextTick ensures DOM is updated before we try to observe elements
+          nextTick(() => {
+            console.log('DOM updated, setting up observer');
+            setupObserver();
+          });
+          
+          // Set up scroll event listener for the scroll-to-top button
+          window.addEventListener('scroll', handleScroll);
+        });
+        
+        // Called when the component is removed from the DOM
+        onUnmounted(() => {
+          // Clean up event listeners and observers to prevent memory leaks
+          window.removeEventListener('scroll', handleScroll);
+          if (observer) {
+            observer.disconnect();
+            observer = null;
+            console.log('Observer disconnected on unmount');
+          }
+        });
+        
+        // ==================== Expose To Template ====================
+        // Return all reactive variables and methods that the template needs
+        return {
+          products,
+          loading,
+          error,
+          allLoaded,
+          showScrollTop,
+          loadingTrigger,
+          loadMoreProducts,
+          scrollToTop
+        };
+      }
+    });
+    
+    // Enable performance tracking for Vue (helps with debugging)
+    app.config.performance = true;
+    
+    // Mount the Vue application to the #app div
+    app.mount('#app');
+  </script>
+</body>
+</html>
